@@ -30,7 +30,9 @@ class OrderOut(BaseModel):
         from_attributes = True
 
 
-class PaystackInitResponse(BaseModel):
-    authorization_url: str
-    access_code: str
+class PagaInitResponse(BaseModel):
     reference: str
+    web_payment_link: Optional[str] = None
+    bank_transfer_account_number: Optional[str] = None
+    ussd_short_code: Optional[str] = None
+    expiry_datetime_utc: Optional[str] = None

@@ -23,7 +23,7 @@ def gen_id() -> str:
 
 class PaymentMethod(str, enum.Enum):
     manual = "manual"
-    paystack = "paystack"
+    paga = "paga"
 
 
 class OrderStatus(str, enum.Enum):
@@ -56,7 +56,7 @@ class User(Base):
 
     # Running total of what this user has actually paid for successful
     # orders. There is no wallet/top-up balance in this system -- purchases
-    # are paid per-order via manual transfer or Paystack.
+    # are paid per-order via manual transfer or Paga.
     amount_spent_kobo = Column(Integer, default=0, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -126,8 +126,10 @@ class Order(Base):
 
     # Manual transfer proof-of-payment upload path/URL.
     proof_url = Column(String, nullable=True)
-    # Paystack transaction reference, used to verify the charge server-side.
-    paystack_reference = Column(String, nullable=True)
+    # Paga's referenceNumber for this order's payment request -- what we
+    # send in every subsequent Paga call (status check, webhook matching)
+    # to identify this specific transaction.
+    paga_reference = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     fulfilled_at = Column(DateTime, nullable=True)

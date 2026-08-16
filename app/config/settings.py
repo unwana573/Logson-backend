@@ -20,8 +20,28 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
-    PAYSTACK_SECRET_KEY: str = os.getenv("PAYSTACK_SECRET_KEY", "")
-    PAYSTACK_BASE_URL: str = "https://api.paystack.co"
+    # Paga Collect API. Test/live base URLs differ -- PAGA_TEST_MODE picks
+    # which one PAGA_BASE_URL resolves to. Get these from your Paga
+    # business dashboard (Developer Tools > API Keys).
+    PAGA_PUBLIC_KEY: str = os.getenv("PAGA_PUBLIC_KEY", "")
+    PAGA_SECRET_KEY: str = os.getenv("PAGA_SECRET_KEY", "")
+    # The pre-shared key used to compute the SHA-512 request/webhook hash
+    # Paga requires on every call -- separate from PAGA_SECRET_KEY, which
+    # is only used for HTTP Basic Auth.
+    PAGA_HASH_KEY: str = os.getenv("PAGA_HASH_KEY", "")
+    PAGA_TEST_MODE: bool = os.getenv("PAGA_TEST_MODE", "True").lower() == "true"
+    PAGA_BASE_URL: str = (
+        "https://beta-collect.paga.com" if PAGA_TEST_MODE else "https://collect.paga.com"
+    )
+    # Shown to the payer as who they're paying. Doesn't have to match your
+    # legal business name exactly, just something recognizable.
+    PAGA_PAYEE_NAME: str = os.getenv("PAGA_PAYEE_NAME", "Logson")
+    # Absolute base URL of this API, used to build the callBackUrl Paga
+    # calls once a payment is fulfilled, e.g. https://api.logson.ng ->
+    # https://api.logson.ng/orders/paga/webhook. Must be publicly
+    # reachable -- localhost will not work here even in dev, since Paga's
+    # servers (not your browser) are what call this URL.
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://127.0.0.1:8000")
 
     # Used to verify the ID token Google's Identity Services SDK returns to
     # the frontend. Must match the OAuth client ID configured in Google

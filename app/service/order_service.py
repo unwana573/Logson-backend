@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Optional
 
-import requests
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -10,7 +9,8 @@ from app.config.settings import get_settings
 from app.repository.order_repository import OrderRepository
 from app.repository.product_repository import ProductRepository
 from app.repository.user_repository import UserRepository
-from app.schema.order import OrderCreate, OrderOut, PaystackInitResponse
+from app.schema.order import OrderCreate, OrderOut, PagaInitResponse
+from app.service import paga_service
 
 settings = get_settings()
 
@@ -79,60 +79,80 @@ class OrderService:
         )
         return self._to_out(order)
 
-    def paystack_init(self, order_id: str, user: models.User) -> PaystackInitResponse:
+    def paga_init(self, order_id: str, user: models.User) -> PagaInitResponse:
         order = self.orders.get_by_id(order_id)
         if not order or order.user_id != user.id:
             raise HTTPException(status_code=404, detail="Order not found")
-        if order.payment_method != models.PaymentMethod.paystack:
-            raise HTTPException(status_code=400, detail="This order was not created for Paystack")
-        if not settings.PAYSTACK_SECRET_KEY:
-            raise HTTPException(status_code=500, detail="PAYSTACK_SECRET_KEY is not configured on the server")
+        if order.payment_method != models.PaymentMethod.paga:
+            raise HTTPException(status_code=400, detail="This order was not created for Paga")
 
-        resp = requests.post(
-            f"{settings.PAYSTACK_BASE_URL}/transaction/initialize",
-            headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
-            json={
-                "email": user.email,
-                "amount": order.amount_kobo,
-                "metadata": {"order_id": order.id},
-            },
-            timeout=15,
+        # order.id is already a unique, non-guessable uuid hex, which is
+        # exactly what Paga wants for referenceNumber -- no separate ID
+        # generation needed.
+        result = paga_service.create_payment_request(
+            reference_number=order.id,
+            amount_kobo=order.amount_kobo,
+            payer_name=user.full_name,
+            payer_email=user.email,
+            callback_url=f"{settings.APP_BASE_URL}/orders/paga/webhook",
         )
-        data = resp.json()
-        if not data.get("status"):
-            raise HTTPException(status_code=502, detail="Could not start Paystack transaction")
 
-        order.paystack_reference = data["data"]["reference"]
+        order.paga_reference = result.reference_number
         self.orders.commit_and_refresh(order)
 
-        return PaystackInitResponse(
-            authorization_url=data["data"]["authorization_url"],
-            access_code=data["data"]["access_code"],
-            reference=data["data"]["reference"],
+        return PagaInitResponse(
+            reference=result.reference_number,
+            web_payment_link=result.web_payment_link,
+            bank_transfer_account_number=result.bank_transfer_account_number,
+            ussd_short_code=result.ussd_short_code,
+            expiry_datetime_utc=result.expiry_datetime_utc,
         )
 
-    def paystack_verify(self, order_id: str, user: models.User) -> OrderOut:
+    def paga_verify(self, order_id: str, user: models.User) -> OrderOut:
+        """Manual "check now" fallback for a Paga order. Paga's own
+        guidance is that the webhook (paga_webhook below) is the
+        authoritative signal -- this exists for a person who wants to
+        confirm status without waiting, using the documented but
+        less-precise /status endpoint (see paga_service.is_status_fully_paid)."""
         order = self.orders.get_by_id(order_id)
         if not order or order.user_id != user.id:
             raise HTTPException(status_code=404, detail="Order not found")
-        if not order.paystack_reference:
-            raise HTTPException(status_code=400, detail="No Paystack transaction to verify")
-        if not settings.PAYSTACK_SECRET_KEY:
-            raise HTTPException(status_code=500, detail="PAYSTACK_SECRET_KEY is not configured on the server")
+        if not order.paga_reference:
+            raise HTTPException(status_code=400, detail="No Paga transaction to verify")
 
-        resp = requests.get(
-            f"{settings.PAYSTACK_BASE_URL}/transaction/verify/{order.paystack_reference}",
-            headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
-            timeout=15,
-        )
-        data = resp.json()
-        if data.get("status") and data["data"]["status"] == "success":
-            self._assign_stock_and_credit(order)
-        else:
-            order.status = models.OrderStatus.failed
+        if order.status == models.OrderStatus.pending:
+            status_data = paga_service.get_payment_status(order.paga_reference)
+            if paga_service.is_status_fully_paid(status_data):
+                self._assign_stock_and_credit(order)
+                order = self.orders.commit_and_refresh(order)
 
-        order = self.orders.commit_and_refresh(order)
         return self._to_out(order)
+
+    def paga_webhook(self, payload: dict) -> None:
+        """Handles Paga's Payment Request callback notification. This is
+        the authoritative source of truth for a Paga order's fulfillment --
+        see the module docstring in paga_service.py for why polling
+        /status is a fallback, not the primary path.
+
+        Reference: https://developer-docs.paga.com/docs/operations-1#14-payment-request-callback-notifications
+        """
+        if not paga_service.verify_webhook_hash(payload):
+            raise HTTPException(status_code=401, detail="Invalid webhook hash")
+
+        reference = payload.get("externalReferenceNumber")
+        order = self.orders.get_by_id(reference) if reference else None
+        if not order:
+            # Don't 404 on an unknown reference -- Paga retries failed
+            # webhooks up to 3 times, and a 4xx/5xx just triggers more
+            # retries for a reference we'll never recognize.
+            return
+
+        if order.status != models.OrderStatus.pending:
+            return  # already processed, e.g. a retried notification
+
+        if payload.get("event") == "PAYMENT_COMPLETE" and payload.get("state") == "CONSUMED":
+            self._assign_stock_and_credit(order)
+            self.orders.commit_and_refresh(order)
 
     def my_orders(self, user_id: str) -> list[OrderOut]:
         return [self._to_out(o) for o in self.orders.list_for_user(user_id)]
@@ -142,8 +162,8 @@ class OrderService:
 
     def approve_manual_order(self, order_id: str) -> OrderOut:
         """Admin approves a manual bank transfer after checking the
-        uploaded proof of payment. Paystack orders confirm themselves via
-        paystack_verify() instead -- this path is manual-only."""
+        uploaded proof of payment. Paga orders confirm themselves via the
+        webhook (or paga_verify) instead -- this path is manual-only."""
         order = self.orders.get_by_id(order_id)
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
