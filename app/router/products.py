@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_admin
+from app.config.database import get_db
+from app.config.deps import get_current_admin
 from app.schema.product import AddStockRequest, ProductCreate, ProductOut, ProductUpdate
 from app.service.product_service import ProductService
 

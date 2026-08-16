@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_user
-from app.schema.auth import GoogleAuthRequest, LoginRequest, SignupRequest, TokenResponse
+from app.config.database import get_db
+from app.config.deps import get_current_user
+from app.schema.auth import GoogleAuthRequest, LoginRequest, RefreshRequest, SignupRequest, TokenResponse
 from app.schema.user import UserOut
 from app.service.auth_service import AuthService
 
@@ -27,6 +27,14 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
     Verified server-side in AuthService.google_auth -- the frontend never
     tells us who the user is, only Google's signed token does."""
     return AuthService(db).google_auth(payload)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
+    """Frontend calls this with the refresh token once the access token
+    (short-lived, ACCESS_TOKEN_EXPIRE_MINUTES) has expired, to get a new
+    pair without asking the person to log in again."""
+    return AuthService(db).refresh(payload)
 
 
 @router.get("/me", response_model=UserOut)

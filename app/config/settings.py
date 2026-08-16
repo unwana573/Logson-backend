@@ -17,7 +17,8 @@ class Settings:
 
     SECRET_KEY: str = os.getenv("LOGSON_SECRET_KEY", "dev-secret-change-me-in-production")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     PAYSTACK_SECRET_KEY: str = os.getenv("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_BASE_URL: str = "https://api.paystack.co"
@@ -26,6 +27,14 @@ class Settings:
     # the frontend. Must match the OAuth client ID configured in Google
     # Cloud Console for this app.
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+
+    # SendGrid delivers the "user feedback" emails triggered by
+    # POST /feedback. FEEDBACK_NOTIFY_EMAIL is where those land -- defaults
+    # to EMAIL_FROM if unset so a single email address is enough to get
+    # started.
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "noreply@logson.ng")
+    FEEDBACK_NOTIFY_EMAIL: str = os.getenv("FEEDBACK_NOTIFY_EMAIL", "") or os.getenv("EMAIL_FROM", "noreply@logson.ng")
 
     CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",")
 

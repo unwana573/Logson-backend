@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from app.config.database import Base
 
 
 def gen_id() -> str:
@@ -134,3 +134,18 @@ class Order(Base):
 
     user = relationship("User", back_populates="orders")
     product = relationship("Product")
+
+
+class Feedback(Base):
+    """A user's opinion/suggestion submitted through the store. Persisted
+    here for an admin to browse later, and also emailed out immediately
+    on submission -- see FeedbackService."""
+
+    __tablename__ = "feedback"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")

@@ -2,9 +2,15 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.repository.user_repository import UserRepository
-from app.schema.auth import GoogleAuthRequest, LoginRequest, SignupRequest, TokenResponse
+from app.schema.auth import GoogleAuthRequest, LoginRequest, RefreshRequest, SignupRequest, TokenResponse
 from app.schema.user import UserOut
-from app.security import create_access_token, hash_password, verify_password
+from app.config.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    hash_password,
+    verify_password,
+)
 from app.service.google_oauth import verify_google_id_token
 
 
@@ -12,6 +18,18 @@ class AuthService:
     def __init__(self, db: Session):
         self.db = db
         self.users = UserRepository(db)
+
+    def _issue_tokens(self, user) -> TokenResponse:
+        """Every path that ends in an authenticated session -- signup,
+        login, Google sign-in, and refresh itself -- goes through this one
+        place so access and refresh tokens are always issued as a pair."""
+        access_token = create_access_token({"sub": user.id})
+        refresh_token = create_refresh_token({"sub": user.id})
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=UserOut.model_validate(user),
+        )
 
     def signup(self, payload: SignupRequest) -> TokenResponse:
         if self.users.get_by_email(payload.email):
@@ -30,9 +48,7 @@ class AuthService:
             hashed_password=hash_password(payload.password),
             is_admin=is_first_user,
         )
-
-        token = create_access_token({"sub": user.id})
-        return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+        return self._issue_tokens(user)
 
     def login(self, payload: LoginRequest) -> TokenResponse:
         user = self.users.get_by_email(payload.email)
@@ -46,8 +62,7 @@ class AuthService:
         if not user.is_active:
             raise HTTPException(status_code=403, detail="This account has been deactivated")
 
-        token = create_access_token({"sub": user.id})
-        return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+        return self._issue_tokens(user)
 
     def google_auth(self, payload: GoogleAuthRequest) -> TokenResponse:
         """Signs in an existing Google-linked user, links Google to an
@@ -77,5 +92,21 @@ class AuthService:
         if not user.is_active:
             raise HTTPException(status_code=403, detail="This account has been deactivated")
 
-        token = create_access_token({"sub": user.id})
-        return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+        return self._issue_tokens(user)
+
+    def refresh(self, payload: RefreshRequest) -> TokenResponse:
+        """Exchanges a still-valid refresh token for a brand new
+        access/refresh pair, so the person doesn't have to log in again
+        every time their short-lived access token expires."""
+        token_payload = decode_refresh_token(payload.refresh_token)
+        if token_payload is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+        user_id = token_payload.get("sub")
+        user = self.users.get_by_id(user_id) if user_id else None
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="This account has been deactivated")
+
+        return self._issue_tokens(user)

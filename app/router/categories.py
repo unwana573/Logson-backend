@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_admin
+from app.config.database import get_db
+from app.config.deps import get_current_admin
 from app.schema.category import CategoryCreate, CategoryOut
 from app.service.category_service import CategoryService
 
