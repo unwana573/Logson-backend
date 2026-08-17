@@ -95,3 +95,11 @@ All read through `app/config/settings.py`:
 | POST | /orders/{id}/reject | admin |
 | POST | /orders/{id}/paystack/init | authenticated |
 | POST | /orders/{id}/paystack/verify | authenticated |
+
+
+1. The create product page should contain category( the admin would select from already created categories), name, description, price, stock, product image and when this is saved it should take the admin to part where  credentials would be added
+2. the price shouldn`t be fixed on kobo it should be flexible based on how many figures are inputed
+3. test that admin should be able to create, update and delete category
+4. add google auth btn to the frontend
+5. Users should be able through the landing page from a product button on the navbar
+6. Thats the hosted backend url https://logson-backend.onrender.com replace local host with this and integrate it

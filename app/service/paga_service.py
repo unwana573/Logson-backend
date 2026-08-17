@@ -106,7 +106,13 @@ def create_payment_request(
     try:
         data = resp.json()
     except ValueError:
-        raise HTTPException(status_code=502, detail="Paga returned an unreadable response")
+        # Surface Paga's actual response body -- a non-JSON reply usually
+        # means an auth failure, IP whitelist rejection, or wrong base URL,
+        # and the raw text says which.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Paga returned a non-JSON response (HTTP {resp.status_code}): {resp.text[:300]}",
+        )
 
     if data.get("statusCode") != "0":
         raise HTTPException(
@@ -159,7 +165,10 @@ def get_payment_status(reference_number: str) -> dict:
     try:
         return resp.json()
     except ValueError:
-        raise HTTPException(status_code=502, detail="Paga returned an unreadable response")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Paga returned a non-JSON response (HTTP {resp.status_code}): {resp.text[:300]}",
+        )
 
 
 def is_status_fully_paid(status_data: dict) -> bool:
