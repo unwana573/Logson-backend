@@ -21,6 +21,7 @@ class ProductService:
             id=p.id,
             name=p.name,
             vendor=p.vendor,
+            description=p.description,
             category_id=p.category_id,
             category_name=p.category.name if p.category else None,
             price_kobo=p.price_kobo,
@@ -56,6 +57,7 @@ class ProductService:
             category_id=payload.category_id,
             price_kobo=payload.price_kobo,
             image_url=payload.image_url,
+            description=payload.description,
         )
         self.products.add_stock_lines(product, self._parse_stock_lines(payload.stock_text))
         product = self.products.commit_and_refresh(product)

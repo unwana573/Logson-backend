@@ -79,6 +79,7 @@ class Product(Base):
     id = Column(String, primary_key=True, default=gen_id)
     name = Column(String, nullable=False, index=True)
     vendor = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
     category_id = Column(String, ForeignKey("categories.id"), nullable=False)
     price_kobo = Column(Integer, nullable=False)
     image_url = Column(String, nullable=True)

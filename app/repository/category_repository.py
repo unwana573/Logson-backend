@@ -25,6 +25,12 @@ class CategoryRepository:
         self.db.refresh(category)
         return category
 
+    def update(self, category: models.Category, name: str) -> models.Category:
+        category.name = name
+        self.db.commit()
+        self.db.refresh(category)
+        return category
+
     def delete(self, category: models.Category) -> None:
         self.db.delete(category)
         self.db.commit()

@@ -5,6 +5,10 @@ class CategoryCreate(BaseModel):
     name: str
 
 
+class CategoryUpdate(BaseModel):
+    name: str
+
+
 class CategoryOut(BaseModel):
     id: str
     name: str

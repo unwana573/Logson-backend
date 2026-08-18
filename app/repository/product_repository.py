@@ -30,10 +30,22 @@ class ProductRepository:
         return self.db.query(models.Product).filter(models.Product.id == product_id).first()
 
     def create(
-        self, *, name: str, vendor: str, category_id: str, price_kobo: int, image_url: Optional[str]
+        self,
+        *,
+        name: str,
+        vendor: str,
+        category_id: str,
+        price_kobo: int,
+        image_url: Optional[str],
+        description: Optional[str] = None,
     ) -> models.Product:
         product = models.Product(
-            name=name, vendor=vendor, category_id=category_id, price_kobo=price_kobo, image_url=image_url
+            name=name,
+            vendor=vendor,
+            category_id=category_id,
+            price_kobo=price_kobo,
+            image_url=image_url,
+            description=description,
         )
         self.db.add(product)
         self.db.flush()  # get product.id before adding stock units
