@@ -53,3 +53,7 @@ class OrderRepository:
         self.db.commit()
         self.db.refresh(order)
         return order
+
+    def delete(self, order: models.Order) -> None:
+        self.db.delete(order)
+        self.db.commit()

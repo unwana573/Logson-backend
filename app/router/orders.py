@@ -57,6 +57,18 @@ def my_orders(db: Session = Depends(get_db), current_user: models.User = Depends
     return OrderService(db).my_orders(current_user.id)
 
 
+@router.delete("/{order_id}", status_code=204)
+def delete_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Remove a pending/failed order the buyer no longer wants. A
+    successful (fulfilled) order can't be deleted -- see
+    OrderService.delete_order."""
+    OrderService(db).delete_order(order_id, current_user)
+
+
 @router.get("", response_model=list[OrderOut])
 def list_all_orders(
     status: Optional[models.OrderStatus] = None,

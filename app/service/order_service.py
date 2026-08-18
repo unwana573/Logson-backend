@@ -160,6 +160,21 @@ class OrderService:
     def list_all(self, status: Optional[models.OrderStatus]) -> list[OrderOut]:
         return [self._to_out(o) for o in self.orders.list_all(status)]
 
+    def delete_order(self, order_id: str, user: models.User) -> None:
+        """Let a user remove one of their own orders they've changed their
+        mind about. Only orders that haven't been fulfilled can go -- a
+        successful order has stock assigned to the buyer and its amount
+        credited to their spend total, so erasing the row would leave both
+        dangling. Pending/failed orders never got that far, so they're safe
+        to drop entirely."""
+        order = self.orders.get_by_id(order_id)
+        if not order or order.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.status == models.OrderStatus.success:
+            raise HTTPException(status_code=400, detail="A completed order can't be deleted")
+
+        self.orders.delete(order)
+
     def approve_manual_order(self, order_id: str) -> OrderOut:
         """Admin approves a manual bank transfer after checking the
         uploaded proof of payment. Paga orders confirm themselves via the
