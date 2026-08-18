@@ -58,10 +58,11 @@ between tests and no `logson.db` file left behind.
 All read through `app/config/settings.py`:
 
 - `DATABASE_URL` — defaults to local SQLite (`sqlite:///./logson.db`). Point this at Postgres in production, e.g. `postgresql://user:pass@host/db`.
-- `LOGSON_SECRET_KEY` — JWT signing secret. Set a real random value in production.
+- `ENVIRONMENT` — `development` (default) or `production`. In `production` the app refuses to start unless a real JWT secret is set (see below).
+- `LOGSON_SECRET_KEY` — JWT signing secret; `SECRET_KEY` is accepted as an alias. **Required in production** — the app fails to boot without it rather than falling back to a guessable key. Generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
 - `GOOGLE_CLIENT_ID` — OAuth client ID from Google Cloud Console, required for `POST /auth/google`. Must match the client ID the frontend uses to request ID tokens.
 - `PAYSTACK_SECRET_KEY` — your Paystack secret key, required for the `/orders/{id}/paystack/init` and `/paystack/verify` endpoints.
-- `CORS_ORIGINS` — comma-separated list of allowed origins. Defaults to `*`; lock this down to your frontend's real URL in production.
+- `CORS_ORIGINS` — comma-separated list of allowed origins. Defaults to the local Vite dev server; **set this to your frontend's real URL in production**. A `*` value disables credentialed CORS as a safety fallback.
 
 ## Business rules enforced server-side
 

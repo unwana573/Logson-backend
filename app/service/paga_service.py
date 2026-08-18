@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 from dataclasses import dataclass
 from typing import Optional
 
@@ -209,4 +210,6 @@ def verify_webhook_hash(payload: dict) -> bool:
         outstanding_str,
         settings.PAGA_HASH_KEY,
     )
-    return expected == payload.get("hash")
+    # Constant-time comparison so a byte-by-byte timing side channel can't be
+    # used to fish for a valid-looking webhook hash.
+    return hmac.compare_digest(expected, str(payload.get("hash") or ""))

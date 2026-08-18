@@ -34,7 +34,6 @@ class OrderRepository:
         quantity: int,
         amount_kobo: int,
         payment_method: models.PaymentMethod,
-        proof_url: Optional[str],
     ) -> models.Order:
         order = models.Order(
             user_id=user_id,
@@ -42,7 +41,6 @@ class OrderRepository:
             quantity=quantity,
             amount_kobo=amount_kobo,
             payment_method=payment_method,
-            proof_url=proof_url,
         )
         self.db.add(order)
         self.db.commit()

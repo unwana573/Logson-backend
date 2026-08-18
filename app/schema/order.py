@@ -10,7 +10,6 @@ class OrderCreate(BaseModel):
     product_id: str
     quantity: int = Field(default=1, ge=1)
     payment_method: PaymentMethod
-    proof_url: Optional[str] = None  # required client-side for manual transfer
 
 
 class OrderOut(BaseModel):
@@ -23,7 +22,10 @@ class OrderOut(BaseModel):
     amount_kobo: int
     payment_method: PaymentMethod
     status: OrderStatus
-    proof_url: Optional[str] = None
+    # True once a proof-of-payment image has been uploaded for this order
+    # (manual transfers only). The bytes are fetched separately from
+    # GET /orders/{id}/proof so lists stay lightweight.
+    has_proof: bool = False
     created_at: datetime
 
     class Config:

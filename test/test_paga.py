@@ -64,7 +64,6 @@ def test_paga_init_rejects_wrong_payment_method(client, admin_token, user_token)
             "product_id": product_id,
             "quantity": 1,
             "payment_method": "manual",
-            "proof_url": "https://example.com/proof.jpg",
         },
         headers=auth_headers(user_token),
     ).json()

@@ -9,10 +9,11 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 
 from app.config.database import Base
 
@@ -125,8 +126,6 @@ class Order(Base):
     payment_method = Column(Enum(PaymentMethod), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.pending, nullable=False)
 
-    # Manual transfer proof-of-payment upload path/URL.
-    proof_url = Column(String, nullable=True)
     # Paga's referenceNumber for this order's payment request -- what we
     # send in every subsequent Paga call (status check, webhook matching)
     # to identify this specific transaction.
@@ -137,6 +136,36 @@ class Order(Base):
 
     user = relationship("User", back_populates="orders")
     product = relationship("Product")
+    # Proof-of-payment image for manual transfers, kept in its own table
+    # (see OrderProof). Deleting an order takes its proof with it.
+    proof = relationship(
+        "OrderProof",
+        back_populates="order",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class OrderProof(Base):
+    """Proof-of-payment image for a manual bank-transfer order, stored as
+    raw bytes in the database rather than on a third-party host: it stays
+    private (served only through an auth-protected endpoint), needs no extra
+    credentials, and -- being a brand-new table -- is created automatically
+    by Base.metadata.create_all on the next boot, with no migration.
+
+    One row per order (order_id is unique); re-uploading replaces it. The
+    image bytes are deferred so listing orders (which only needs to know a
+    proof *exists*) never pulls megabytes of blobs into memory."""
+
+    __tablename__ = "order_proofs"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    order_id = Column(String, ForeignKey("orders.id"), unique=True, nullable=False)
+    image = deferred(Column(LargeBinary, nullable=False))
+    content_type = Column(String, nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    order = relationship("Order", back_populates="proof")
 
 
 class Feedback(Base):

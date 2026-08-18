@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.config.settings import get_settings
+from app.repository.order_proof_repository import OrderProofRepository
 from app.repository.order_repository import OrderRepository
 from app.repository.product_repository import ProductRepository
 from app.repository.user_repository import UserRepository
@@ -21,6 +22,7 @@ class OrderService:
         self.orders = OrderRepository(db)
         self.products = ProductRepository(db)
         self.users = UserRepository(db)
+        self.proofs = OrderProofRepository(db)
 
     @staticmethod
     def _to_out(o: models.Order) -> OrderOut:
@@ -34,7 +36,7 @@ class OrderService:
             amount_kobo=o.amount_kobo,
             payment_method=o.payment_method,
             status=o.status,
-            proof_url=o.proof_url,
+            has_proof=o.proof is not None,
             created_at=o.created_at,
         )
 
@@ -63,21 +65,51 @@ class OrderService:
         if product.stock_count < payload.quantity:
             raise HTTPException(status_code=409, detail="Not enough stock available")
 
-        if payload.payment_method == models.PaymentMethod.manual and not payload.proof_url:
-            raise HTTPException(
-                status_code=400,
-                detail="A proof-of-payment upload is required for manual bank transfer",
-            )
-
+        # A manual transfer's proof is uploaded in a second step
+        # (POST /orders/{id}/proof) and enforced at approval time, so
+        # creating the order itself no longer requires it.
         order = self.orders.create(
             user_id=user.id,
             product_id=product.id,
             quantity=payload.quantity,
             amount_kobo=product.price_kobo * payload.quantity,
             payment_method=payload.payment_method,
-            proof_url=payload.proof_url,
         )
         return self._to_out(order)
+
+    def save_proof(
+        self, order_id: str, user: models.User, *, image: bytes, content_type: str
+    ) -> OrderOut:
+        """Owner uploads (or replaces) the proof-of-payment image for their
+        own manual-transfer order while it's still pending. Paga orders and
+        already-processed orders don't take a proof."""
+        order = self.orders.get_by_id(order_id)
+        if not order or order.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.payment_method != models.PaymentMethod.manual:
+            raise HTTPException(
+                status_code=400,
+                detail="Proof of payment only applies to manual bank transfer orders",
+            )
+        if order.status != models.OrderStatus.pending:
+            raise HTTPException(status_code=400, detail="This order has already been processed")
+
+        self.proofs.upsert(order_id=order.id, image=image, content_type=content_type)
+        order = self.orders.commit_and_refresh(order)
+        return self._to_out(order)
+
+    def get_proof(self, order_id: str, user: models.User) -> models.OrderProof:
+        """Returns the stored proof image for viewing. The order's owner or
+        any admin may fetch it; everyone else gets a 404 that doesn't reveal
+        whether the order exists."""
+        order = self.orders.get_by_id(order_id)
+        if not order or (order.user_id != user.id and not user.is_admin):
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        proof = self.proofs.get_by_order_id(order_id)
+        if not proof:
+            raise HTTPException(status_code=404, detail="No proof of payment uploaded for this order")
+        return proof
 
     def paga_init(self, order_id: str, user: models.User) -> PagaInitResponse:
         order = self.orders.get_by_id(order_id)
@@ -186,6 +218,11 @@ class OrderService:
             raise HTTPException(status_code=400, detail="Only manual transfer orders need approval")
         if order.status != models.OrderStatus.pending:
             raise HTTPException(status_code=400, detail="This order has already been processed")
+        if order.proof is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This order has no uploaded proof of payment to review",
+            )
 
         self._assign_stock_and_credit(order)
         order = self.orders.commit_and_refresh(order)

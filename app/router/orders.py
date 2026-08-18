@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app import models
@@ -11,6 +11,21 @@ from app.service.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
+# Proof-of-payment uploads: cap the size and identify the real image type from
+# the file's magic bytes instead of trusting the client's Content-Type header
+# (which is trivially spoofed). We store the sniffed type.
+MAX_PROOF_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _sniff_image_type(data: bytes) -> Optional[str]:
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
 
 @router.post("", response_model=OrderOut, status_code=201)
 def create_order(
@@ -19,6 +34,38 @@ def create_order(
     current_user: models.User = Depends(get_current_user),
 ):
     return OrderService(db).create_order(current_user, payload)
+
+
+@router.post("/{order_id}/proof", response_model=OrderOut)
+async def upload_proof(
+    order_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Owner uploads a proof-of-payment image (JPEG/PNG/WEBP, <=5 MB) for a
+    pending manual-transfer order. Re-uploading replaces the previous image."""
+    contents = await file.read()
+    if len(contents) > MAX_PROOF_BYTES:
+        raise HTTPException(status_code=413, detail="Proof image must be 5 MB or smaller")
+    content_type = _sniff_image_type(contents)
+    if content_type is None:
+        raise HTTPException(status_code=400, detail="Proof must be a JPEG, PNG, or WEBP image")
+    return OrderService(db).save_proof(
+        order_id, current_user, image=contents, content_type=content_type
+    )
+
+
+@router.get("/{order_id}/proof")
+def get_proof(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Streams the stored proof image back to the order's owner or any admin
+    (used by the admin Payments view); 404 otherwise or if none was uploaded."""
+    proof = OrderService(db).get_proof(order_id, current_user)
+    return Response(content=proof.image, media_type=proof.content_type)
 
 
 @router.post("/{order_id}/paga/init", response_model=PagaInitResponse)

@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.config.database import Base, get_db
+from app.config.ratelimit import limiter
 from app.main import app
 
 
@@ -33,6 +34,12 @@ def client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+
+    # The limiter lives on the module-level (shared) app; leaving it on would
+    # let the many signups/logins across the suite trip 429s. Rate-limit tests
+    # re-enable it and use a dedicated X-Forwarded-For bucket (test_rate_limit).
+    limiter.enabled = False
+
     yield TestClient(app)
     app.dependency_overrides.clear()
 
